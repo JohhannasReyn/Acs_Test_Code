@@ -1,0 +1,25 @@
+Open a new terminal and install the dependency numpy and matplotlib
+using the following line:
+
+```bash
+pip install ipympl numpy matplotlib pandas scipy zscore
+```
+
+Once the dependencies have been installed, update pip to the latest
+version using the following line:
+
+```bash
+python -m ensurepip --upgrade
+```
+
+Check to make sure the dependencies have been installed using 
+the  following line:
+
+```bash
+python -c "import numpy; import matplotlib; import pandas; import scipy; import scipy;"
+```
+
+If you see no errors, you are okay to proceed with running the testbed_dataprocessing.ipynb script.
+
+
+!!! IMPORTANT: If you are using an actual IMU, open the file IMUInterface.h and comment out line 5. !!!
