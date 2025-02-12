@@ -1,13 +1,13 @@
+#include "DataLogging.hpp"
+#include "IMUInterface.h"
 #include "constants/constants.h"
 #include "ekf/CalibratedEKF.hpp"
-#include "IMUInterface.h"
 #include <Arduino.h>
 #include <ArduinoEigen.h>
 #include <SD.h>
 #include <Wire.h>
-#include <unity.h>
 #include <chrono>
-#include "DataLogging.hpp"
+#include <unity.h>
 
 // Pins for all inputs, keep in mind the PWM defines must be on PWM
 // pins, 2.29.24 Note that some of the pins were re-arranged to make a cleaner
@@ -21,9 +21,9 @@
 #define PWMA 29
 #define LED 13
 
-
-static const String FILENAME_RSO = "satellite_data_clean";// RSO = Random + Softiron Offset
-static const String FILENAME_RSO_EKF = "satellite_data_dirty";
+static const String FILENAME_RSO =
+    "clean_satellite_data"; // RSO = Random + Softiron Offset
+static const String FILENAME_RSO_EKF = "satellite_data_with_noise";
 
 // For CubeSat
 // For x-magnetorquer
@@ -66,28 +66,23 @@ static const String FILENAME_RSO_EKF = "satellite_data_dirty";
 
 // Structure to hold measurement data
 struct MeasurementData {
-  double pwm;
-  double mag_x, mag_y, mag_z;
-  double gyro_x, gyro_y, gyro_z;
-  double voltage;
+	double pwm;
+	double mag_x, mag_y, mag_z;
+	double gyro_x, gyro_y, gyro_z;
+	double voltage;
 };
-
-
+  
 // Helper function to write measurement data
 void writeMeasurementData(MeasurementData data, String filename) {
-    // Create array with proper C++ syntax
-    double values[8] = {
-        data.pwm, 
-        data.mag_x, 
-        data.mag_y, 
-        data.mag_z, 
-        data.gyro_x, 
-        data.gyro_y, 
-        data.gyro_z, 
-        data.voltage
-    };
-    // Use DataLog instead of dataLogger
-    DataLog(values, 8, filename);
+	// Create array with proper C++ syntax
+	double values[8] = {
+		  	data.pwm, 
+		  	data.mag_x, data.mag_y, data.mag_z, 
+		  	data.gyro_x, data.gyro_y, data.gyro_z, 
+		  	data.voltage
+	};
+	// Use DataLog instead of dataLogger
+	DataLog(values, 8, filename);
 }
 
 // // Helper function to parse a line of CSV data
@@ -150,98 +145,60 @@ private:
   	const double dt = 0.01; // 10ms sample time
 
   	void initializeEKF() {
-  	  	Eigen::VectorXd initial_state(6);
-  	  	initial_state << 0, 0, 0, 0, 0, 0;
+    	Eigen::VectorXd initial_state(6);
+    	initial_state << 0, 0, 0, 0, 0, 0;
 
-  	  	Eigen::MatrixXd initial_covariance = Eigen::MatrixXd::Identity(6, 6) * 0.1;
-  	  	Eigen::MatrixXd Q = Eigen::MatrixXd::Identity(6, 6);
-  	  	Q.topLeftCorner(3, 3) *= 0.01;
-  	  	Q.bottomRightCorner(3, 3) *= 0.01;
+    	Eigen::MatrixXd initial_covariance = Eigen::MatrixXd::Identity(6, 6) * 0.1;
+    	Eigen::MatrixXd Q = Eigen::MatrixXd::Identity(6, 6);
+    	Q.topLeftCorner(3, 3) *= 0.01;
+    	Q.bottomRightCorner(3, 3) *= 0.01;
 
-  	  	Eigen::MatrixXd R = Eigen::MatrixXd::Identity(6, 6);
-  	  	R.topLeftCorner(3, 3) *= 0.1;
-  	  	R.bottomRightCorner(3, 3) *= 0.1;
+    	Eigen::MatrixXd R = Eigen::MatrixXd::Identity(6, 6);
+    	R.topLeftCorner(3, 3) *= 0.1;
+    	R.bottomRightCorner(3, 3) *= 0.1;
 
-  	  	Eigen::MatrixXd H = Eigen::MatrixXd::Identity(6, 6);
+    	Eigen::MatrixXd H = Eigen::MatrixXd::Identity(6, 6);
 
-  	  	ekf.initialize(dt, initial_state, initial_covariance, Q, R, H, 3.8);
+    	ekf.initialize(dt, initial_state, initial_covariance, Q, R, H, 3.8);
   	}
 
 public:
   	IMUProcessor() { initializeEKF(); }
 
   	void processMeasurement(const MeasurementData &data, Eigen::VectorXd& filtered_output) {
-    	ekf.updateVoltage(data.voltage);
+  	  	ekf.updateVoltage(data.voltage);
 
-    	// Print raw measurements
-    	Serial.println("Raw Measurements:");
-    	Serial.print("PWM: ");
-    	Serial.println(data.pwm);
-    	Serial.print("Magnetic Field (X,Y,Z): ");
-    	Serial.print(data.mag_x);
-    	Serial.print(", ");
-    	Serial.print(data.mag_y);
-    	Serial.print(", ");
-    	Serial.println(data.mag_z);
-    	Serial.print("Angular Velocity (X,Y,Z): ");
-    	Serial.print(data.gyro_x);
-    	Serial.print(", ");
-    	Serial.print(data.gyro_y);
-    	Serial.print(", ");
-    	Serial.println(data.gyro_z);
-    	Serial.print("Voltage: ");
-    	Serial.println(data.voltage);
+  	  	// Update measurement vector
+  	  	ekf.Z << data.mag_x, data.mag_y, data.mag_z, data.gyro_x, data.gyro_y, data.gyro_z;
 
-    	// Update measurement vector
-    	ekf.Z << data.mag_x, data.mag_y, data.mag_z, data.gyro_x, data.gyro_y,
-    	    data.gyro_z;
+  	  	// Process measurement
+  	  	ekf.step();
 
-    	// Process measurement
-    	ekf.step();
-
-    	// Get filtered state
-    	filtered_output = ekf.state;
-
-    	// Print filtered measurements
-    	Serial.println("\nFiltered Measurements:");
-    	Serial.print("Magnetic Field (X,Y,Z): ");
-    	Serial.print(filtered_output(0) - data.mag_x);
-    	Serial.print(", ");
-    	Serial.print(filtered_output(1) - data.mag_y);
-    	Serial.print(", ");
-    	Serial.println(filtered_output(2) - data.mag_z);
-    	Serial.print("Angular Velocity (X,Y,Z): ");
-    	Serial.print(filtered_output(3) - data.gyro_x);
-    	Serial.print(", ");
-    	Serial.print(filtered_output(4) - data.gyro_y);
-    	Serial.print(", ");
-    	Serial.println(filtered_output(5) - data.gyro_z);
-
-    	// Print error metrics
-    	Serial.print("Innovation Magnitude: ");
-    	Serial.println(ekf.getLastInnovationMagnitude());
-    	Serial.print("Prediction Error: ");
-    	Serial.println(ekf.getLastPredictionError());
-		Serial.println("Divergence:");
-		Serial.print("Magnetic Field (X,Y,Z): ");
-    	Serial.print(filtered_output(0) - data.mag_x);
-    	Serial.print(", ");
-    	Serial.print(filtered_output(1) - data.mag_y);
-    	Serial.print(", ");
-    	Serial.println(filtered_output(2) - data.mag_z);
-    	Serial.print("Angular Velocity (X,Y,Z): ");
-    	Serial.print(filtered_output(3) - data.gyro_x);
-    	Serial.print(", ");
-    	Serial.print(filtered_output(4) - data.gyro_y);
-    	Serial.print(", ");
-    	Serial.println(filtered_output(5) - data.gyro_z);
-    	if (ekf.getLastError() != EKFError::OK) {
-    	  	// Serial.print("Error Status: ");
-    	  	// Serial.println(static_cast<int>(ekf.getLastError()));
-    	}
-
-    	Serial.println("----------------------------------------");
-  	}
+  	  	// Get filtered state
+  	  	filtered_output = ekf.state;
+		unsigned long now = millis();
+  	  	// Print only essential info once per measurement
+  	  	static unsigned long lastPrint = 0;
+  	  	if (now - lastPrint >= 100) {  // Print once per second
+			Serial.println("\nMeasurements Summary:");
+			Serial.print("Raw Mag (X,Y,Z): ");
+			Serial.print(data.mag_x, 2); Serial.print(", ");
+			Serial.print(data.mag_y, 2); Serial.print(", ");
+			Serial.println(data.mag_z, 2);
+			
+			Serial.print("Filtered Mag (X,Y,Z): ");
+			Serial.print(filtered_output(0), 2); Serial.print(", ");
+			Serial.print(filtered_output(1), 2); Serial.print(", ");
+			Serial.println(filtered_output(2), 2);
+	
+			Serial.print("Innovation: ");
+			Serial.print(ekf.getLastInnovationMagnitude(), 2);
+			Serial.print(", Error: ");
+			Serial.println(ekf.getLastPredictionError(), 2);
+	
+			lastPrint = millis();
+  	  	}
+	}
 };
 
 // Test case for parsing CSV data
@@ -258,23 +215,23 @@ void setup() {
   	String test_name = "softiron_testing";
 
   	pinMode(LED, OUTPUT);
-  	digitalWrite(LED, LOW);  // LED off initially
-	
+  	digitalWrite(LED, LOW); // LED off initially
+
   	Serial.begin(9600);
-	delay(2000);  // Give time for serial connection
+  	delay(2000); // Give time for serial connection
   	unsigned long startTime = millis();
   	const unsigned long timeout = 5000;
-	
+
   	while (!Serial && (millis() - startTime < timeout)) {
-  		digitalWrite(LED, !digitalRead(LED));  // Toggle LED while waiting
-  		delay(100);
+  	  	digitalWrite(LED, !digitalRead(LED)); // Toggle LED while waiting
+  	  	delay(100);
   	}
-	
-  	digitalWrite(LED, HIGH);  // LED on when proceeding
+
+  	digitalWrite(LED, HIGH); // LED on when proceeding
 
   	Serial.print("Starting ");
-	Serial.print(test_name);
-	Serial.println("...");
+  	Serial.print(test_name);
+  	Serial.println("...");
 
   	// Setup pins
   	pinMode(AIN1, OUTPUT);
@@ -302,13 +259,13 @@ void setup() {
   	// delay(60000);
 
   	if (test_name == "nothing") {
-  		Serial.println("Do nothing");
-  		delay(10000);
+  	  	Serial.println("Do nothing");
+  	  	delay(10000);
   	}
 
-  	if (test_name == "softiron_testing") {///////////////////////////////////////////////////////////////// SOFTIRON TESTING
+  	if (test_name == "softiron_testing") { //////////////////////////////////////////////////// SOFTIRON TESTING
 
-  	  	// Setup files to store values.
+    	// Setup files to store values.
 		DataLogSetup(FILENAME_RSO);// Random values + softiron offsets.
 		DataLogSetup(FILENAME_RSO_EKF);// Random values + softiron offsets filtered through the EKF.
 
@@ -475,130 +432,129 @@ void setup() {
 			}
 		}
   	  	digitalWrite(LED, LOW);
-  	}
+	}
 
-  	if (test_name == "magnetorquer") {
-  	  	Serial.println("turned on");
-  	  	digitalWrite(AIN1, HIGH);
-  	  	digitalWrite(AIN2, LOW);
+	if (test_name == "magnetorquer") {
+	  	Serial.println("turned on");
+	  	digitalWrite(AIN1, HIGH);
+	  	digitalWrite(AIN2, LOW);
+		
+	  	analogWrite(PWMA, 255);
+		
+	  	delay(4000);
+		
+	  	analogWrite(PWMA, 0);
+	  	digitalWrite(AIN1, LOW);
+	  	digitalWrite(AIN2, LOW);
+	  	Serial.println("turned off");
+	}
 
-  	  	analogWrite(PWMA, 255);
+	if (test_name == "magnetometer") {
+	  	if (!imu.begin()) {
+	  	  	while (1) {
+	  	  	  	Serial.println("wrong");
+	  	  	  	delay(100);
+	  	  	};
+	  	}
 
-  	  	delay(4000);
+	  	Serial.println("Setting up imu9DS1 9DOF");
+	  	imu.setupAccel(imu.LSM9DS1_ACCELRANGE_2G);
+	  	imu.setupMag(imu.LSM9DS1_MAGGAIN_12GAUSS);
+	  	imu.setupGyro(imu.LSM9DS1_GYROSCALE_245DPS);
 
-  	  	analogWrite(PWMA, 0);
-  	  	digitalWrite(AIN1, LOW);
-  	  	digitalWrite(AIN2, LOW);
-  	  	Serial.println("turned off");
-  	}
+	  	sensors_event_t accel, mag, gyro, temp;
 
-  	if (test_name == "magnetometer") {
-  	  	if (!imu.begin()) {
-  	  	  	while (1) {
-  	  	  	 	Serial.println("wrong");
-  	  	  	 	delay(100);
-  	  	  	};
-  	  	}
+	  	for (int i = 0; i < 25; i++) {
+	  	  	imu.getEvent(&accel, &mag, &gyro, &temp);
+	  	  	Serial.println(mag.magnetic.z);
+	  	  	delay(100);
+	  	}
 
-  	  	Serial.println("Setting up imu9DS1 9DOF");
-  	  	imu.setupAccel(imu.LSM9DS1_ACCELRANGE_2G);
-  	  	imu.setupMag(imu.LSM9DS1_MAGGAIN_12GAUSS);
-  	  	imu.setupGyro(imu.LSM9DS1_GYROSCALE_245DPS);
+	  	Serial.println("turned on");
 
-  	  	sensors_event_t accel, mag, gyro, temp;
+	  	digitalWrite(AIN1, LOW);
+	  	digitalWrite(AIN2, HIGH);
 
-  	  	for (int i = 0; i < 25; i++) {
-  	  	  	imu.getEvent(&accel,&mag,&gyro,&temp);
-  	  	  	Serial.println(mag.magnetic.z);
-  	  	  	delay(100);
-  	  	}
+	  	analogWrite(PWMA, 255);
+	  	for (int i = 25; i < 75; i++) {
+	  	  	imu.getEvent(&accel, &mag, &gyro, &temp);
+	  	  	Serial.println(mag.magnetic.z);
+	  	  	delay(100);
+	  	}
 
-  	  	Serial.println("turned on");
+	  	Serial.println("turned off");
+	  	analogWrite(PWMA, 0);
 
-  	  	digitalWrite(AIN1, LOW);
-  	  	digitalWrite(AIN2, HIGH);
+	  	for (int i = 75; i < 100; i++) {
+	  	  	imu.getEvent(&accel, &mag, &gyro, &temp);
+	  	  	Serial.println(mag.magnetic.z);
+	  	  	delay(100);
+	  	}
 
-  	  	analogWrite(PWMA, 255);
-  	  	for (int i = 25; i < 75; i++) {
-  	  	  	imu.getEvent(&accel,&mag,&gyro,&temp);
-  	  	  	Serial.println(mag.magnetic.z);
-  	  	  	delay(100);
-  	  	}
+	  	digitalWrite(LED, LOW);
+	}
 
-  	  	Serial.println("turned off");
-  	  	analogWrite(PWMA, 0);
+	if (test_name == "gyro") {
+	  	if (!imu.begin()) {
+	  	  	while (1) {
+	  	  	  	Serial.println("wrong");
+	  	  	  	delay(100);
+	  	  	};
+	  	}
 
-  	  	for (int i = 75; i < 100; i++) {
-  	  	  	imu.getEvent(&accel,&mag,&gyro,&temp);
-  	  	  	Serial.println(mag.magnetic.z);
-  	  	  	delay(100);
-  	  	}
+	  	Serial.println("Setting up imu9DS1 9DOF");
+	  	imu.setupAccel(imu.LSM9DS1_ACCELRANGE_2G);
+	  	imu.setupMag(imu.LSM9DS1_MAGGAIN_8GAUSS);
+	  	imu.setupGyro(imu.LSM9DS1_GYROSCALE_245DPS);
 
-  	  	digitalWrite(LED, LOW);
-  	}
+	  	sensors_event_t accel, mag, gyro, temp;
 
-  	if (test_name == "gyro") {
-  	  	if (!imu.begin()) {
-  	  	  	while (1) {
-  	  	  	  	Serial.println("wrong");
-  	  	  	  	delay(100);
-  	  	  	};
-  	  	}
+	  	for (int i = 0; i < 50; i++) {
+	  	  	imu.getEvent(&accel, &mag, &gyro, &temp);
+	  	  	Serial.println(gyro.gyro.z);
+	  	  	delay(100);
+	  	}
+	}
 
-  	  	Serial.println("Setting up imu9DS1 9DOF");
-  	  	imu.setupAccel(imu.LSM9DS1_ACCELRANGE_2G);
-  	  	imu.setupMag(imu.LSM9DS1_MAGGAIN_8GAUSS);
-  	  	imu.setupGyro(imu.LSM9DS1_GYROSCALE_245DPS);
+	if (test_name == "light_test") {
+	  	for (int i = 0; i < 5; i++) {
+	  	  	digitalWrite(LED, LOW);
+	  	  	delay(1000);
+	  	  	digitalWrite(LED, HIGH);
+	  	  	delay(1000);
+	  	}
+	}
 
-        sensors_event_t accel, mag, gyro, temp;
-
-  	  	for (int i = 0; i < 50; i++) {
-  	  	  	imu.getEvent(&accel, &mag, &gyro, &temp);
-  	  	  	Serial.println(gyro.gyro.z);
-  	  	  	delay(100);
-  	  	}
-  	}
-
-  	if (test_name == "light_test") {
-  	  	for (int i = 0; i < 5; i++) {
-  	  	  	digitalWrite(LED, LOW);
-  	  	  	delay(1000);
-  	  	  	digitalWrite(LED, HIGH);
-  	  	  	delay(1000);
-  	  	}
-  	}
-
-  	digitalWrite(STBY, LOW);
-  	digitalWrite(LED, LOW);
+	digitalWrite(STBY, LOW);
+	digitalWrite(LED, LOW);
 }
 
-
 void loop() {
-    // static uint32_t lastPrint = 0;
-    // static uint32_t loopCount = 0;
-    
-    // // Add watchdog reset if you're using it
-    // // watchdog.reset();
-    
-    // // Process sensor data
-    // if (processNextDataPoint()) {
-    //     loopCount++;
-        
-    //     // Print debug info every second
-    //     if (millis() - lastPrint > 1000) {
-    //         Serial.print("Loop count: ");
-    //         Serial.print(loopCount);
-    //         Serial.print(", Free memory: ");
-    //         Serial.println(FreeRam());  // You'll need to implement FreeRam()
-    //         lastPrint = millis();
-    //     }
-    // } else {
-    //     Serial.println("Failed to process data point");
-    //     delay(1000);  // Prevent spam if there's an error
-    // }
-    
-    // // Add a small delay to prevent overwhelming the system
-    // delay(10);
+  // static uint32_t lastPrint = 0;
+  // static uint32_t loopCount = 0;
+
+  // // Add watchdog reset if you're using it
+  // // watchdog.reset();
+
+  // // Process sensor data
+  // if (processNextDataPoint()) {
+  //     loopCount++;
+
+  //     // Print debug info every second
+  //     if (millis() - lastPrint > 1000) {
+  //         Serial.print("Loop count: ");
+  //         Serial.print(loopCount);
+  //         Serial.print(", Free memory: ");
+  //         Serial.println(FreeRam());  // You'll need to implement FreeRam()
+  //         lastPrint = millis();
+  //     }
+  // } else {
+  //     Serial.println("Failed to process data point");
+  //     delay(1000);  // Prevent spam if there's an error
+  // }
+
+  // // Add a small delay to prevent overwhelming the system
+  // delay(10);
 }
 
 #endif // RUN_TESTS
