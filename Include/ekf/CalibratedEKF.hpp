@@ -3,13 +3,16 @@
 
 #pragma once
 
+#include <functional>
 #include "../constants/constants.h"
 #include "../ekf/ResponsiveEKF.hpp"
 #include <ArduinoEigen.h>
+#include <Arduino.h>
 #include <SD.h>
 #include <map>
 #include <math.h>
 #include <deque>
+#include <algorithm>
 
 typedef std::array<float, 3> CoeffArray;
 
@@ -44,6 +47,10 @@ private:
     static constexpr double ERROR_DECAY = 0.95;
     std::array<double, 6> cumulative_offset = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
+    float constrainValue(float value, float min_val, float max_val) {
+        return std::max(min_val, std::min(max_val, value));
+    }
+
     static constexpr size_t getVoltageIndex(float voltage) {
         if (voltage <= MIN_VOLTAGE) return 0;
         if (voltage >= MIN_VOLTAGE + (VOLTAGE_LEVELS - 1) * VOLTAGE_STEP) {
@@ -57,7 +64,7 @@ private:
         last_error = EKFError::OK;
         
         if (voltage < 3.6 || voltage > 4.2) {
-            voltage = constrain(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
+            voltage = constrainValue(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
             last_error = EKFError::VOLTAGE_OUT_OF_BOUNDS;
         }
         
@@ -78,38 +85,6 @@ private:
         return last_error == EKFError::OK;
     }
 
-    // void update_error_learning(const Eigen::VectorXd& error) {
-    //     static const double weight_sum = std::accumulate(
-    //         std::begin(std::array<double, INNOVATION_HISTORY_SIZE>({ERROR_DECAY})), 
-    //         std::end(std::array<double, INNOVATION_HISTORY_SIZE>({ERROR_DECAY})), 
-    //         0.0, 
-    //         [](double sum, double decay) { return sum + std::pow(decay, sum); }
-    //     );
-
-    //     for (int i = 0; i < 6; ++i) {
-    //         // Update innovation history
-    //         if (innovation_history[i].size() >= INNOVATION_HISTORY_SIZE) {
-    //             innovation_history[i].pop_front();
-    //         }
-    //         innovation_history[i].push_back(error(i));
-
-    //         // Calculate weighted average of recent errors
-    //         double weighted_error = 0.0;
-    //         size_t idx = 0;
-    //         for (const auto& hist_error : innovation_history[i]) {
-    //             weighted_error += hist_error * std::pow(ERROR_DECAY, idx++) / weight_sum;
-    //         }
-
-    //         // Update offset history
-    //         if (offset_history[i].size() >= INNOVATION_HISTORY_SIZE) {
-    //             offset_history[i].pop_front();
-    //         }
-    //         offset_history[i].push_back(weighted_error);
-
-    //         // Update cumulative offset with learning rate
-    //         cumulative_offset[i] += LEARNING_RATE * weighted_error;
-    //     }
-    // }
 	void update_error_learning(const Eigen::VectorXd& error) {
 		// Pre-calculate decay factors up to INNOVATION_HISTORY_SIZE
 		static std::array<double, INNOVATION_HISTORY_SIZE> decay_factors;
@@ -117,7 +92,6 @@ private:
 		static bool initialized = false;
 		
 		if (!initialized) {
-			Serial.println("Initializing decay factors..."); // Debug
 			weight_sum = 0.0;
 			for (size_t i = 0; i < INNOVATION_HISTORY_SIZE; ++i) {
 				decay_factors[i] = std::pow(ERROR_DECAY, static_cast<double>(i));
@@ -246,7 +220,7 @@ public:
     bool updateVoltage(float voltage) {
         if (voltage < MIN_VOLTAGE || voltage > MAX_VOLTAGE) {
             last_error = EKFError::VOLTAGE_OUT_OF_BOUNDS;
-            current_voltage = constrain(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
+            current_voltage = constrainValue(voltage, MIN_VOLTAGE, MAX_VOLTAGE);
         } else {
             current_voltage = voltage;
             last_error = EKFError::OK;
@@ -254,78 +228,7 @@ public:
         return last_error == EKFError::OK;
     }
 
-    // void step() {
-    //     // Update axis offsets
-    //     PWMCoefficients x_ox_coeffs, y_ox_coeffs, z_ox_coeffs;
-    
-    //     bool success = true;
-    //     success &= getInterpolatedOffsets(current_voltage, x_ox_coeffs,
-    //         [](const VoltageCoefficients &vc) -> const PWMCoefficients & { return vc.pwmX.ox; });
-    //     success &= getInterpolatedOffsets(current_voltage, y_ox_coeffs,
-    //         [](const VoltageCoefficients &vc) -> const PWMCoefficients & { return vc.pwmY.ox; });
-    //     success &= getInterpolatedOffsets(current_voltage, z_ox_coeffs,
-    //         [](const VoltageCoefficients &vc) -> const PWMCoefficients & { return vc.pwmZ.ox; });
-
-    //     if (!success) {
-    //         last_error = EKFError::OFFSET_CALCULATION_ERROR;
-    //     }
-
-    //     // Store original measurement
-    //     Eigen::VectorXd original_Z = Z;
-
-    //     // Apply cumulative offsets and calibration
-    //     for (int i = 0; i < 6; ++i) {
-    //         Z(i) += cumulative_offset[i];
-    //     }
-
-    //     // Standard EKF step with improved dynamics
-    //     Eigen::VectorXd predicted_state = rk4(state, dt, 0.0, dt);
-    //     Eigen::VectorXd innovation = Z - H_d * predicted_state;
-    //     last_innovation_magnitude = innovation.norm();
-
-	// 	// call ResponsiveEKF's step implementation
-	// 	ResponsiveEKF::step();
-
-    //     // Update gains based on current dynamics !!! now handled inside ResponsiveEkf's step() function !!!
-    //     // update_gains(Z);
-
-    //     // Perform EKF update !!! Now handled inside of the ResponsiveEKF's step() function !!!
-    //     // Eigen::MatrixXd J = CalculateJacobian(); 
-    //     // predict(J);
-    //     // correct();
-
-    //     // Learn from prediction error
-    //     Eigen::VectorXd prediction_error = Z - H_d * state;
-    //     update_error_learning(prediction_error);
-    //     last_prediction_error = prediction_error.norm();
-
-    //     // Remove offsets from state
-    //     for (int i = 0; i < 6; ++i) {
-    //         state(i) -= cumulative_offset[i];
-    //     }
-
-    //     // Physical bounds checking
-    //     static const float MAX_MAGNETIC_FIELD = 100.0;
-    //     static const float MAX_ANGULAR_VELOCITY = 10.0;
-
-    //     bool state_valid = true;
-    //     for (int i = 0; i < 3; ++i) {
-    //         if (std::abs(state(i)) > MAX_MAGNETIC_FIELD || 
-    //             std::abs(state(i + 3)) > MAX_ANGULAR_VELOCITY) {
-    //             state_valid = false;
-    //             break;
-    //         }
-    //     }
-
-    //     last_error = state_valid ? EKFError::OK : EKFError::STATE_BOUNDS_EXCEEDED;
-
-    //     // Restore original measurement
-    //     Z = original_Z;
-    // }
-
 	void step() {
-		Serial.println("EKF: Starting step..."); // Debug 1
-		
 		// Update axis offsets
 		PWMCoefficients x_ox_coeffs, y_ox_coeffs, z_ox_coeffs;
 	
@@ -336,8 +239,6 @@ public:
 			[](const VoltageCoefficients &vc) -> const PWMCoefficients & { return vc.pwmY.ox; });
 		success &= getInterpolatedOffsets(current_voltage, z_ox_coeffs,
 			[](const VoltageCoefficients &vc) -> const PWMCoefficients & { return vc.pwmZ.ox; });
-	
-		Serial.println("EKF: Offset interpolation complete..."); // Debug 2
 	
 		if (!success) {
 			last_error = EKFError::OFFSET_CALCULATION_ERROR;
@@ -352,26 +253,18 @@ public:
 			Z(i) += cumulative_offset[i];
 		}
 	
-		Serial.println("EKF: Offsets applied..."); // Debug 3
-	
 		// Get predicted state using ResponsiveEKF's RK4 integration
 		Eigen::VectorXd predicted_state = rk4(state, dt, 0.0, dt);
 		Eigen::VectorXd innovation = Z - H_d * predicted_state;
 		last_innovation_magnitude = innovation.norm();
 	
-		Serial.println("EKF: Prediction complete..."); // Debug 4
-	
 		// Call ResponsiveEKF's step implementation
 		ResponsiveEKF::step();
-	
-		Serial.println("EKF: Base step complete..."); // Debug 5
 	
 		// Learn from prediction error
 		Eigen::VectorXd prediction_error = Z - H_d * state;
 		update_error_learning(prediction_error);
 		last_prediction_error = prediction_error.norm();
-	
-		Serial.println("EKF: Error learning complete..."); // Debug 6
 	
 		// Remove offsets from state
 		for (int i = 0; i < 6; ++i) {
@@ -395,8 +288,6 @@ public:
 	
 		// Restore original measurement
 		Z = original_Z;
-	
-		Serial.println("EKF: Step complete"); // Debug 7
 	}
 };
 

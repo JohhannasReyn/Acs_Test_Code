@@ -2,6 +2,7 @@
 #include "IMUInterface.h"
 #include "constants/constants.h"
 #include "ekf/CalibratedEKF.hpp"
+#include "ekf/ResponsiveEKF.hpp"
 #include <Arduino.h>
 #include <ArduinoEigen.h>
 #include <SD.h>
@@ -22,8 +23,8 @@
 #define LED 13
 
 static const String FILENAME_RSO =
-    "clean_satellite_data"; // RSO = Random + Softiron Offset
-static const String FILENAME_RSO_EKF = "satellite_data_with_noise";
+    "values_with_offset_removed"; // RSO = Random + Softiron Offset
+static const String FILENAME_RSO_EKF = "values_filtered_through_ekf";
 
 // For CubeSat
 // For x-magnetorquer
@@ -50,20 +51,6 @@ static const String FILENAME_RSO_EKF = "satellite_data_with_noise";
 // #define BURN1 14
 // #define BURN2 15
 
-// void setUp(void) {
-//     // Initialize EKF before each test
-//     Eigen::VectorXd initial_state = Eigen::VectorXd::Zero(STATE_SIZE);
-//     Eigen::MatrixXd initial_covariance =
-//     Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) * 0.1; Eigen::MatrixXd
-//     process_noise = Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) *
-//     0.001; Eigen::MatrixXd measurement_noise =
-//     Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) * 0.01; Eigen::MatrixXd
-//     H = Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE);
-
-//     ekf.initialize(dt, initial_state, initial_covariance, process_noise,
-//     measurement_noise, H, 3.6f);
-// }
-
 // Structure to hold measurement data
 struct MeasurementData {
 	double pwm;
@@ -85,63 +72,10 @@ void writeMeasurementData(MeasurementData data, String filename) {
 	DataLog(values, 8, filename);
 }
 
-// // Helper function to parse a line of CSV data
-// MeasurementData parseLine(const String &line) {
-//   MeasurementData data = {0}; // Initialize all fields to 0
-//   int start = 0;
-//   int end = line.indexOf(',');
-//   int index = 0;
-
-//   while (end >= 0) {
-//     String value = line.substring(start, end);
-//     value.trim();
-//     double parsed = value.toFloat();
-
-//     switch (index) {
-//     case 0:
-//       data.pwm = parsed;
-//       break;
-//     case 1:
-//       data.mag_x = parsed;
-//       break;
-//     case 2:
-//       data.mag_y = parsed;
-//       break;
-//     case 3:
-//       data.mag_z = parsed;
-//       break;
-//     case 4:
-//       data.gyro_x = parsed;
-//       break;
-//     case 5:
-//       data.gyro_y = parsed;
-//       break;
-//     case 6:
-//       data.gyro_z = parsed;
-//       break;
-//     case 7:
-//       data.voltage = parsed;
-//       break;
-//     }
-
-//     start = end + 1;
-//     end = line.indexOf(',', start);
-//     index++;
-//   }
-
-//   // Handle last value if not empty
-//   if (start < line.length()) {
-//     String value = line.substring(start);
-//     value.trim();
-//     data.voltage = value.toFloat();
-//   }
-
-//   return data;
-// }
-
 class IMUProcessor {
 private:
-  	CalibratedEKF ekf;
+  	//CalibratedEKF ekf;
+	ResponsiveEKF ekf;
   	const double dt = 0.01; // 10ms sample time
 
   	void initializeEKF() {
@@ -158,15 +92,15 @@ private:
     	R.bottomRightCorner(3, 3) *= 0.1;
 
     	Eigen::MatrixXd H = Eigen::MatrixXd::Identity(6, 6);
-
-    	ekf.initialize(dt, initial_state, initial_covariance, Q, R, H, 3.8);
+		ekf.initialize(dt, initial_state, initial_covariance, Q, R, H);
+    	// ekf.initialize(dt, initial_state, initial_covariance, Q, R, H, 3.8);
   	}
 
 public:
   	IMUProcessor() { initializeEKF(); }
 
   	void processMeasurement(const MeasurementData &data, Eigen::VectorXd& filtered_output) {
-  	  	ekf.updateVoltage(data.voltage);
+  	  	//ekf.updateVoltage(data.voltage);
 
   	  	// Update measurement vector
   	  	ekf.Z << data.mag_x, data.mag_y, data.mag_z, data.gyro_x, data.gyro_y, data.gyro_z;
@@ -190,11 +124,12 @@ public:
 			Serial.print(filtered_output(0), 2); Serial.print(", ");
 			Serial.print(filtered_output(1), 2); Serial.print(", ");
 			Serial.println(filtered_output(2), 2);
-	
-			Serial.print("Innovation: ");
-			Serial.print(ekf.getLastInnovationMagnitude(), 2);
-			Serial.print(", Error: ");
-			Serial.println(ekf.getLastPredictionError(), 2);
+			
+			// !! USE WITH CALLIBRATED EKF ONLY !!
+			// Serial.print("Innovation: ");
+			// Serial.print(ekf.getLastInnovationMagnitude(), 2);
+			// Serial.print(", Error: ");
+			// Serial.println(ekf.getLastPredictionError(), 2);
 	
 			lastPrint = millis();
   	  	}
@@ -229,9 +164,7 @@ void setup() {
 
   	digitalWrite(LED, HIGH); // LED on when proceeding
 
-  	Serial.print("Starting ");
-  	Serial.print(test_name);
-  	Serial.println("...");
+  	Serial.print("Starting "); Serial.print(test_name); Serial.println("...");
 
   	// Setup pins
   	pinMode(AIN1, OUTPUT);
@@ -280,19 +213,6 @@ void setup() {
   	    	// Attempts to connect to IMU are done in IMUInterface
   	    	return;// Handle failure case
   	  	}
-
-  	  	// float mag_hardiron_x = -4.9547000000000025;
-  	  	// float mag_hardiron_y = 49.75155;
-  	  	// float mag_hardiron_z = -13.855600000000003;
-  	  	// float pwmY_ox_1 = 8.83096680e-03;
-  	  	// float pwmY_ox_2 = 4.26409072e-07;
-  	  	// float pwmY_ox_3 = -6.69370023e-09;
-  	  	// float pwmY_oy_1 = -2.64514092e-01;
-  	  	// float pwmY_oy_2 = -9.82458813e-06;
-  	  	// float pwmY_oy_3 = 9.11136691e-08;
-  	  	// float pwmY_oz_1 = -1.90567242e-02;
-  	  	// float pwmY_oz_2 = -5.99945842e-06;
-  	  	// float pwmY_oz_3 = 7.85718685e-10;
 
   	  	// Configure IMU settings
   	  	imu.setupAccel(imu.LSM9DS1_ACCELRANGE_2G);
@@ -360,10 +280,11 @@ void setup() {
             };
 			DataLog(offset_values, 8, FILENAME_RSO);
 
-			//Serial.println("\nPassing data through Calibrated EKF...");
+			//Serial.println("\nPassing data through EKF...");
 			Eigen::VectorXd filtered_output;
             // Process measurement through EKF
-  	    	processor.processMeasurement(iron_offset,filtered_output);// set timestamp 3, add time to sum
+  	    	processor.processMeasurement(iron_offset,filtered_output);
+			// set timestamp 3, add time to sum
 			const auto t3 = std::chrono::system_clock::now();
 			auto diff_t32 = t3 - t2;
 

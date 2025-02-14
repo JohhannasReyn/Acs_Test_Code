@@ -6,7 +6,7 @@
 
 #ifdef USE_MOCK_IMU
 	#define IMU_TYPE MockLSM9DS1
-	#pragma message("Mock IMU Implementation enabled")
+	#pragma message("Using Mock IMU Implementation")
 	#include "MockLSM9DS1.h"
 #else
 	#include <Adafruit_LSM9DS1.h>
