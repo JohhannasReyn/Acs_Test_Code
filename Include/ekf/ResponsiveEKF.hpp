@@ -23,6 +23,7 @@ private:
     std::array<std::deque<double>, 6> value_history;
     std::array<std::deque<double>, 6> velocity_history;
     std::array<double, 6> current_gains;
+    std::array<DynamicsInfo, 6> last_dynamics;
     
     // Base noise matrices
     Eigen::MatrixXd Q_base;
@@ -184,6 +185,13 @@ private:
     }
 
 public:
+
+	// Dynamics information structure
+    struct DynamicsInfo {
+        double velocity;
+        double acceleration;
+    };
+
     ResponsiveEKF() : EKF() {
         // Initialize histories
         for (int i = 0; i < 6; ++i) {
@@ -220,6 +228,23 @@ public:
         predict(J);
         correct();
     }
+
+	// Get dynamics information for a specific state variable
+    DynamicsInfo getDynamicsInfo(size_t index) const {
+        if (index >= 6) {
+            return DynamicsInfo{0.0, 0.0};
+        }
+        return last_dynamics[index];
+    }
+
+    // Get all dynamics information
+    const std::array<DynamicsInfo, 6>& getAllDynamicsInfo() const {
+        return last_dynamics;
+    }
+
+	DynamicsInfo getLastDynamicsInfo() const {
+		return last_dynamics[last_dynamics.size() - 1];
+	}
 };
 
 #endif // RESPONSIVE_EKF_H

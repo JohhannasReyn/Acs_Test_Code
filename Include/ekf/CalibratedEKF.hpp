@@ -5,7 +5,8 @@
 
 #include <functional>
 #include "../constants/constants.h"
-#include "../ekf/ResponsiveEKF.hpp"
+#include "../ekf/ekf.hpp"
+// #include "../ekf/ResponsiveEKF.hpp"
 #include <ArduinoEigen.h>
 #include <Arduino.h>
 #include <SD.h>
@@ -27,7 +28,8 @@ enum class EKFError {
     STATE_BOUNDS_EXCEEDED = 5
 };
 
-class CalibratedEKF : public ResponsiveEKF {
+// class CalibratedEKF : public ResponsiveEKF {
+class CalibratedEKF : public EKF {
 private:
     float last_innovation_magnitude;
     float last_prediction_error;
@@ -187,8 +189,7 @@ private:
     }
 
 public:
-    CalibratedEKF() : ResponsiveEKF(),
-					  current_voltage(MIN_VOLTAGE),
+    CalibratedEKF() : current_voltage(MIN_VOLTAGE),
                       last_error(EKFError::OK),
                       x_offsets{0.0f, 0.0f, 0.0f},
                       y_offsets{0.0f, 0.0f, 0.0f},
@@ -198,6 +199,18 @@ public:
             offset_history[i] = std::deque<double>();
         }
     }
+
+	// CalibratedEKF() : ResponsiveEKF(),
+	// 				  current_voltage(MIN_VOLTAGE),
+    //                   last_error(EKFError::OK),
+    //                   x_offsets{0.0f, 0.0f, 0.0f},
+    //                   y_offsets{0.0f, 0.0f, 0.0f},
+    //                   z_offsets{0.0f, 0.0f, 0.0f} {
+    //     for (int i = 0; i < 6; ++i) {
+    //         innovation_history[i] = std::deque<double>();
+    //         offset_history[i] = std::deque<double>();
+    //     }
+    // }
 
     EKFError getLastError() const { return last_error; }
 

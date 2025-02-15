@@ -74,8 +74,8 @@ void writeMeasurementData(MeasurementData data, String filename) {
 
 class IMUProcessor {
 private:
-  	//CalibratedEKF ekf;
-	ResponsiveEKF ekf;
+  	CalibratedEKF calibrated_ekf;
+	ResponsiveEKF responsive_ekf;
   	const double dt = 0.01; // 10ms sample time
 
   	void initializeEKF() {
@@ -92,44 +92,62 @@ private:
     	R.bottomRightCorner(3, 3) *= 0.1;
 
     	Eigen::MatrixXd H = Eigen::MatrixXd::Identity(6, 6);
-		ekf.initialize(dt, initial_state, initial_covariance, Q, R, H);
-    	// ekf.initialize(dt, initial_state, initial_covariance, Q, R, H, 3.8);
+		responsive_ekf.initialize(dt, initial_state, initial_covariance, Q, R, H);
+    	calibrated_ekf.initialize(dt, initial_state, initial_covariance, Q, R, H, 3.8);
   	}
 
 public:
   	IMUProcessor() { initializeEKF(); }
 
-  	void processMeasurement(const MeasurementData &data, Eigen::VectorXd& filtered_output) {
-  	  	//ekf.updateVoltage(data.voltage);
+  	void processMeasurement(const MeasurementData &data, Eigen::VectorXd& responsive_filtered_output, Eigen::VectorXd& calibrated_filtered_output) {
+  	  	// only calibrated ekf requires voltage measurement
+		calibrated_ekf.updateVoltage(data.voltage);
 
   	  	// Update measurement vector
-  	  	ekf.Z << data.mag_x, data.mag_y, data.mag_z, data.gyro_x, data.gyro_y, data.gyro_z;
-
+  	  	responsive_ekf.Z << data.mag_x, data.mag_y, data.mag_z, data.gyro_x, data.gyro_y, data.gyro_z;
+		calibrated_ekf.Z << data.mag_x, data.mag_y, data.mag_z, data.gyro_x, data.gyro_y, data.gyro_z;
   	  	// Process measurement
-  	  	ekf.step();
+  	  	responsive_ekf.step();
+		calibrated_ekf.step();
 
   	  	// Get filtered state
-  	  	filtered_output = ekf.state;
+  	  	responsive_filtered_output = responsive_ekf.state;
+		calibrated_filtered_output = calibrated_ekf.state;
+
 		unsigned long now = millis();
   	  	// Print only essential info once per measurement
   	  	static unsigned long lastPrint = 0;
   	  	if (now - lastPrint >= 100) {  // Print once per second
-			Serial.println("\nMeasurements Summary:");
-			Serial.print("Raw Mag (X,Y,Z): ");
+			Serial.println("\nSummary:");
+			Serial.print("Raw Magnetometer values (X,Y,Z): ");
 			Serial.print(data.mag_x, 2); Serial.print(", ");
 			Serial.print(data.mag_y, 2); Serial.print(", ");
 			Serial.println(data.mag_z, 2);
 			
-			Serial.print("Filtered Mag (X,Y,Z): ");
-			Serial.print(filtered_output(0), 2); Serial.print(", ");
-			Serial.print(filtered_output(1), 2); Serial.print(", ");
-			Serial.println(filtered_output(2), 2);
+			Serial.print("ResponsiveEKF Filtered values (X,Y,Z): ");
+			Serial.print(responsive_filtered_output(0), 2); Serial.print(", ");
+			Serial.print(responsive_filtered_output(1), 2); Serial.print(", ");
+			Serial.println(responsive_filtered_output(2), 2);
+
+			Serial.print("CalibratedEKF Filtered values (X,Y,Z): ");
+			Serial.print(calibrated_filtered_output(0), 2); Serial.print(", ");
+			Serial.print(calibrated_filtered_output(1), 2); Serial.print(", ");
+			Serial.println(calibrated_filtered_output(2), 2);
 			
-			// !! USE WITH CALLIBRATED EKF ONLY !!
-			// Serial.print("Innovation: ");
-			// Serial.print(ekf.getLastInnovationMagnitude(), 2);
-			// Serial.print(", Error: ");
-			// Serial.println(ekf.getLastPredictionError(), 2);
+			// For a single state variable (e.g., index 0)
+			ResponsiveEKF::DynamicsInfo dynamics = responsive_ekf.getLastDynamicsInfo(0); // Get dynamics for first state variable
+			
+			Serial.print("Last ResponsiveEKF dynamics info - ");
+			Serial.print("Velocity: ");
+			Serial.print(dynamics.velocity, 6);  // 6 decimal places
+			Serial.print(", Acceleration: ");
+			Serial.println(dynamics.acceleration, 6);
+			
+			Serial.print("CalibratedEKF last ");
+			Serial.print("Innovation: ");
+			Serial.print(calibrated_ekf.getLastInnovationMagnitude(), 2);
+			Serial.print(", & Error: ");
+			Serial.println(calibrated_ekf.getLastPredictionError(), 2);
 	
 			lastPrint = millis();
   	  	}
@@ -281,9 +299,9 @@ void setup() {
 			DataLog(offset_values, 8, FILENAME_RSO);
 
 			//Serial.println("\nPassing data through EKF...");
-			Eigen::VectorXd filtered_output;
+			Eigen::VectorXd responsive_filtered_output, calibrated_filtered_output;
             // Process measurement through EKF
-  	    	processor.processMeasurement(iron_offset,filtered_output);
+  	    	processor.processMeasurement(iron_offset, responsive_filtered_output, calibrated_filtered_output);
 			// set timestamp 3, add time to sum
 			const auto t3 = std::chrono::system_clock::now();
 			auto diff_t32 = t3 - t2;
@@ -292,12 +310,12 @@ void setup() {
 			// Log data to file #2
 			double filtered_values[8] = {
                 iron_offset.pwm,
-                filtered_output(0),
-                filtered_output(1),
-                filtered_output(2),
-                filtered_output(3),
-                filtered_output(4),
-                filtered_output(5),
+                responsive_filtered_output(0),
+                responsive_filtered_output(1),
+                responsive_filtered_output(2),
+                responsive_filtered_output(3),
+                responsive_filtered_output(4),
+                responsive_filtered_output(5),
                 iron_offset.voltage
             };
             DataLog(filtered_values, 8, FILENAME_RSO_EKF);

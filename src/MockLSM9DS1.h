@@ -97,7 +97,6 @@ public:
         _driftX = 0;
         _driftY = 0;
         _driftZ = 0;
-        _first_print = true;
         // Initialize random seed
         randomSeed(analogRead(0));
         
@@ -197,12 +196,8 @@ public:
         tempEvent->temperature = TEMP_MID + (sin(_simulatedTime * 0.1) * TEMP_RANGE);
 		
 		if (PRINT_CLEAN) {
-			if (_first_print) {
-				Serial.print("Noise intensity set to "); Serial.println(NOISE_INTENSITY);
-				_first_print = false;
-			}
 			// Print clean values via Serial
-        	Serial.print("IMU Generated [Mag -X, -Y, -Z (μT), Gyro -X, -Y, -Z (°/s)]: ");
+        	Serial.print("\nIMU Generated (Pre-noise) [Mag -X, -Y, -Z (μT), Gyro -X, -Y, -Z (°/s)]: ");
         	Serial.print(cleanMagX); Serial.print(", "); Serial.print(cleanMagY); Serial.print(", "); Serial.print(cleanMagZ);Serial.print(", ");
 			Serial.print(gyroEvent->gyro.x); Serial.print(", "); Serial.print(gyroEvent->gyro.y); Serial.print(", "); Serial.println(gyroEvent->gyro.z);
 			Serial.println("\n");
@@ -210,7 +205,6 @@ public:
     }
 
 private:
-	bool _first_print;
     bool _isInitialized;
     uint8_t _accelRange;
     uint8_t _magGain;
