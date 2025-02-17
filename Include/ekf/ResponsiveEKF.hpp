@@ -29,11 +29,6 @@ private:
     Eigen::MatrixXd Q_base;
     Eigen::MatrixXd R_base;
 
-    struct DynamicsInfo {
-        double velocity;
-        double acceleration;
-    };
-
     DynamicsInfo calculate_dynamics(const std::deque<double>& values) {
         DynamicsInfo result = {0.0, 0.0};
         
@@ -185,12 +180,6 @@ private:
     }
 
 public:
-
-	// Dynamics information structure
-    struct DynamicsInfo {
-        double velocity;
-        double acceleration;
-    };
 
     ResponsiveEKF() : EKF() {
         // Initialize histories

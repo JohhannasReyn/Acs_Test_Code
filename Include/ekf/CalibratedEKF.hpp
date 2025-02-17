@@ -6,7 +6,6 @@
 #include <functional>
 #include "../constants/constants.h"
 #include "../ekf/ekf.hpp"
-// #include "../ekf/ResponsiveEKF.hpp"
 #include <ArduinoEigen.h>
 #include <Arduino.h>
 #include <SD.h>
@@ -28,7 +27,6 @@ enum class EKFError {
     STATE_BOUNDS_EXCEEDED = 5
 };
 
-// class CalibratedEKF : public ResponsiveEKF {
 class CalibratedEKF : public EKF {
 private:
     float last_innovation_magnitude;
@@ -200,18 +198,6 @@ public:
         }
     }
 
-	// CalibratedEKF() : ResponsiveEKF(),
-	// 				  current_voltage(MIN_VOLTAGE),
-    //                   last_error(EKFError::OK),
-    //                   x_offsets{0.0f, 0.0f, 0.0f},
-    //                   y_offsets{0.0f, 0.0f, 0.0f},
-    //                   z_offsets{0.0f, 0.0f, 0.0f} {
-    //     for (int i = 0; i < 6; ++i) {
-    //         innovation_history[i] = std::deque<double>();
-    //         offset_history[i] = std::deque<double>();
-    //     }
-    // }
-
     EKFError getLastError() const { return last_error; }
 
     double getLastInnovationMagnitude() const {
@@ -266,13 +252,13 @@ public:
 			Z(i) += cumulative_offset[i];
 		}
 	
-		// Get predicted state using ResponsiveEKF's RK4 integration
+		// Get predicted state using EKF's RK4 integration
 		Eigen::VectorXd predicted_state = rk4(state, dt, 0.0, dt);
 		Eigen::VectorXd innovation = Z - H_d * predicted_state;
 		last_innovation_magnitude = innovation.norm();
 	
-		// Call ResponsiveEKF's step implementation
-		ResponsiveEKF::step();
+		// Call EKF's step implementation
+		EKF::step();
 	
 		// Learn from prediction error
 		Eigen::VectorXd prediction_error = Z - H_d * state;

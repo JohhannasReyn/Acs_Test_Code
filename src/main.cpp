@@ -22,9 +22,8 @@
 #define PWMA 29
 #define LED 13
 
-static const String FILENAME_RSO =
-    "values_with_offset_removed"; // RSO = Random + Softiron Offset
-static const String FILENAME_RSO_EKF = "values_filtered_through_ekf";
+static const String FILENAME_CALIBRATED_EKF = "calibrated_ekf_values"; // RSO = Random + Softiron Offset
+static const String FILENAME_RESPONSIVE_EKF = "responsive_ekf_values";
 
 // For CubeSat
 // For x-magnetorquer
@@ -135,18 +134,16 @@ public:
 			Serial.println(calibrated_filtered_output(2), 2);
 			
 			// For a single state variable (e.g., index 0)
-			ResponsiveEKF::DynamicsInfo dynamics = responsive_ekf.getLastDynamicsInfo(0); // Get dynamics for first state variable
+			ResponsiveEKF::DynamicsInfo dynamics = responsive_ekf.getLastDynamicsInfo(); // Get dynamics for first state variable
 			
-			Serial.print("Last ResponsiveEKF dynamics info - ");
-			Serial.print("Velocity: ");
+			Serial.print("Last ResponsiveEKF Dynamics, Velocity: ");
 			Serial.print(dynamics.velocity, 6);  // 6 decimal places
-			Serial.print(", Acceleration: ");
+			Serial.print(", Accel: ");
 			Serial.println(dynamics.acceleration, 6);
 			
-			Serial.print("CalibratedEKF last ");
-			Serial.print("Innovation: ");
+			Serial.print("Last CalibratedEKF Dynamics, Innovation: ");
 			Serial.print(calibrated_ekf.getLastInnovationMagnitude(), 2);
-			Serial.print(", & Error: ");
+			Serial.print(", Error: ");
 			Serial.println(calibrated_ekf.getLastPredictionError(), 2);
 	
 			lastPrint = millis();
@@ -217,8 +214,8 @@ void setup() {
   	if (test_name == "softiron_testing") { //////////////////////////////////////////////////// SOFTIRON TESTING
 
     	// Setup files to store values.
-		DataLogSetup(FILENAME_RSO);// Random values + softiron offsets.
-		DataLogSetup(FILENAME_RSO_EKF);// Random values + softiron offsets filtered through the EKF.
+		DataLogSetup(FILENAME_CALIBRATED_EKF);// Random values + softiron offsets.
+		DataLogSetup(FILENAME_RESPONSIVE_EKF);// Random values + softiron offsets filtered through the EKF.
 
   	  	Serial.println("Initializing the IMU...");
 
@@ -283,20 +280,20 @@ void setup() {
 			auto t2 = std::chrono::system_clock::now();
 			auto diff_t21 = t2 - t1;
 
-			Serial.println("\nReducing generated values with hardiron offsets...");
+			// Serial.println("Reducing generated values with hardiron offsets...");
 			
-			// Log data to file #1
-			double offset_values[8] = {
-                iron_offset.pwm,
-                iron_offset.mag_x,
-                iron_offset.mag_y,
-                iron_offset.mag_z,
-                iron_offset.gyro_x,
-                iron_offset.gyro_y,
-                iron_offset.gyro_z,
-                iron_offset.voltage
-            };
-			DataLog(offset_values, 8, FILENAME_RSO);
+			// // Log data to file #1
+			// double offset_values[8] = {
+            //     iron_offset.pwm,
+            //     iron_offset.mag_x,
+            //     iron_offset.mag_y,
+            //     iron_offset.mag_z,
+            //     iron_offset.gyro_x,
+            //     iron_offset.gyro_y,
+            //     iron_offset.gyro_z,
+            //     iron_offset.voltage
+            // };
+			// DataLog(offset_values, 8, FILENAME_CALIBRATED_EKF);
 
 			//Serial.println("\nPassing data through EKF...");
 			Eigen::VectorXd responsive_filtered_output, calibrated_filtered_output;
@@ -308,7 +305,7 @@ void setup() {
 
 			// Serial.println("\nLogging filtered values...");
 			// Log data to file #2
-			double filtered_values[8] = {
+			double responsive_filtered_values[8] = {
                 iron_offset.pwm,
                 responsive_filtered_output(0),
                 responsive_filtered_output(1),
@@ -318,20 +315,33 @@ void setup() {
                 responsive_filtered_output(5),
                 iron_offset.voltage
             };
-            DataLog(filtered_values, 8, FILENAME_RSO_EKF);
-			// Serial.println("\n----------------------------------------");
+            DataLog(responsive_filtered_values, 8, FILENAME_RESPONSIVE_EKF);
+			Serial.println("\n----------------------------------------");
+
+			double calibrated_filtered_values[8] = {
+                iron_offset.pwm,
+                calibrated_filtered_output(0),
+                calibrated_filtered_output(1),
+                calibrated_filtered_output(2),
+                calibrated_filtered_output(3),
+                calibrated_filtered_output(4),
+                calibrated_filtered_output(5),
+                iron_offset.voltage
+            };
+            DataLog(calibrated_filtered_values, 8, FILENAME_CALIBRATED_EKF);
+			Serial.println("\n----------------------------------------");
 			
 			total_offset_time += std::chrono::duration_cast<std::chrono::milliseconds>(diff_t21).count();
         	total_filter_time += std::chrono::duration_cast<std::chrono::milliseconds>(diff_t32).count();
 			++count;
 
-        	Serial.print("Offsets calculation: ");
-        	Serial.print(total_offset_time);
-        	Serial.print(" ms, ");
+        	// Serial.print("Offsets calculation: ");
+        	// Serial.print(total_offset_time);
+        	// Serial.print(" ms, ");
 	
-        	Serial.print("EKF calculation: ");
-        	Serial.print(total_filter_time);
-        	Serial.println(" ms.");
+        	// Serial.print("EKF calculation: ");
+        	// Serial.print(total_filter_time);
+        	// Serial.println(" ms.");
   	    	delay(100);
   	  	}
 		const auto stop = std::chrono::high_resolution_clock::now();
@@ -339,35 +349,35 @@ void setup() {
 		double actual_time = static_cast<double>(duration.count() - (100.0*count));
         double per_offset_processed = ((double)total_offset_time / actual_time) * 100.0;
 		double per_ekf_processed = ((double)total_filter_time / actual_time) * 100.0;
-		Serial.println("\nTest completed.");
-		Serial.print(count);
-        Serial.print(" calculation took ");
-        Serial.print(duration.count());
-        Serial.print(" ms to process (with ");
-        Serial.print(100*count);
-		Serial.println(" ms of delay time)");
-        // Calculate average processing times
-		Serial.print(actual_time);
-		Serial.println(" ms actually spent processing data.");
-        Serial.println("Efficiency as a percentage: ");
+		// Serial.println("\nTest completed.");
+		// Serial.print(count);
+        // Serial.print(" calculation took ");
+        // Serial.print(duration.count());
+        // Serial.print(" ms to process (with ");
+        // Serial.print(100*count);
+		// Serial.println(" ms of delay time)");
+        // // Calculate average processing times
+		// Serial.print(actual_time);
+		// Serial.println(" ms actually spent processing data.");
+        // Serial.println("Efficiency as a percentage: ");
 		if (per_offset_processed >= 1.0 || per_ekf_processed >= 1.0) {
-        	Serial.print(per_offset_processed);
-        	Serial.println("% processing offset adjusted values.");
-			Serial.print(per_ekf_processed);
-			Serial.println("% of processing values through the EKF.");
+        	// Serial.print(per_offset_processed);
+        	// Serial.println("% processing offset adjusted values.");
+			// Serial.print(per_ekf_processed);
+			// Serial.println("% of processing values through the EKF.");
 		} else {
 			if (per_offset_processed < 1.0) {
-				Serial.println("Processing values by adjusting their offsets took less than 1.0% of total processing time.");
+				// Serial.println("Processing values by adjusting their offsets took less than 1.0% of total processing time.");
 			} else {
-				Serial.print(per_offset_processed);
-        		Serial.println("% processing offset adjusted values.");
+				// Serial.print(per_offset_processed);
+        		// Serial.println("% processing offset adjusted values.");
 			}
 			if (per_ekf_processed < 1.0) {
-				Serial.println("Processing values with the EKF took less than 1.0% of total processing time.");
-				Serial.println("The time difference is most likely from a combination of generating random values, and returning text via Serial.");
+				// Serial.println("Processing values with the EKF took less than 1.0% of total processing time.");
+				// Serial.println("The time difference is most likely from a combination of generating random values, and returning text via Serial.");
 			} else {
-				Serial.print(per_ekf_processed);
-				Serial.println("% of processing values through the EKF.");
+				// Serial.print(per_ekf_processed);
+				// Serial.println("% of processing values through the EKF.");
 			}
 		}
   	  	digitalWrite(LED, LOW);

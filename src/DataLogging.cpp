@@ -28,7 +28,7 @@ void DataLog(double Data[], int size, String s)
 {
     DataFile = SD.open(s.append(".txt").c_str(), FILE_WRITE);
     if (DataFile) {
-        for(int i = 0 ; i< size;i++) {
+        for(int i = 0 ; i< size;++i) {
             DataFile.print(Data[i]);
             DataFile.print(", ");
 
@@ -42,7 +42,7 @@ void DataLog(double Data[], int size, String s)
     } else {
 		Serial.print(s);
 		Serial.print(": ");
-        for(int i = 0 ; i < size; i++) {
+        for(int i = 0 ; i < size; ++i) {
             Serial.print(Data[i]);
             Serial.print(", ");
         }

@@ -16,6 +16,11 @@ public:
     EKF() {
         initialize_dynamic_tracking();
     }
+	
+    struct DynamicsInfo {
+        double velocity;
+        double acceleration;
+    };
 
 protected:
     double dt;
@@ -43,11 +48,6 @@ protected:
             current_gains[i] = 1.0;
         }
     }
-
-    struct DynamicsInfo {
-        double velocity;
-        double acceleration;
-    };
 
     DynamicsInfo calculate_dynamics(const std::deque<double>& values) {
         DynamicsInfo result = {0.0, 0.0};
