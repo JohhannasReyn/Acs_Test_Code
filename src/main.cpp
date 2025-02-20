@@ -22,6 +22,8 @@
 #define PWMA 29
 #define LED 13
 
+static const String FILENAME_IMU_INPUT_RAW = "raw_imu_readings";
+static const String FILENAME_IMU_INPUT_OFFSET = "imu_readings_offset";
 static const String FILENAME_CALIBRATED_EKF = "calibrated_ekf_values"; // RSO = Random + Softiron Offset
 static const String FILENAME_RESPONSIVE_EKF = "responsive_ekf_values";
 
@@ -52,22 +54,28 @@ static const String FILENAME_RESPONSIVE_EKF = "responsive_ekf_values";
 
 // Structure to hold measurement data
 struct MeasurementData {
-	double pwm;
-	double mag_x, mag_y, mag_z;
-	double gyro_x, gyro_y, gyro_z;
-	double voltage;
+	float pwm;
+	float mag_x, mag_y, mag_z;
+	float gyro_x, gyro_y, gyro_z;
+	float voltage;
 };
-  
-// Helper function to write measurement data
+
+////////////////////////////////////////////////////////////////////////////////
+//                Helper function to write measurement data                   //
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+// VALUES/HEADER = [PWM, MAG_X, MAG_Y, MAG_Z, GYRO_X, GYRO_Y, GYRO_Z, VOLTAGE]//
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
 void writeMeasurementData(MeasurementData data, String filename) {
 	// Create array with proper C++ syntax
-	double values[8] = {
+	float values[8] = {
 		  	data.pwm, 
 		  	data.mag_x, data.mag_y, data.mag_z, 
 		  	data.gyro_x, data.gyro_y, data.gyro_z, 
 		  	data.voltage
 	};
-	// Use DataLog instead of dataLogger
+	// Use DataLog (not 'dataLogger')
 	DataLog(values, 8, filename);
 }
 
@@ -75,7 +83,7 @@ class IMUProcessor {
 private:
   	CalibratedEKF calibrated_ekf;
 	ResponsiveEKF responsive_ekf;
-  	const double dt = 0.01; // 10ms sample time
+  	const float dt = 0.01; // 10ms sample time
 
   	void initializeEKF() {
     	Eigen::VectorXd initial_state(6);
@@ -214,6 +222,8 @@ void setup() {
   	if (test_name == "softiron_testing") { //////////////////////////////////////////////////// SOFTIRON TESTING
 
     	// Setup files to store values.
+		DataLogSetup(FILENAME_IMU_INPUT_RAW);// Store the IMU readings for comparison.
+		DataLogSetup(FILENAME_IMU_INPUT_OFFSET);// Stores the imu values that are offset by constants.
 		DataLogSetup(FILENAME_CALIBRATED_EKF);// Random values + softiron offsets.
 		DataLogSetup(FILENAME_RESPONSIVE_EKF);// Random values + softiron offsets filtered through the EKF.
 
@@ -235,7 +245,8 @@ void setup() {
   	  	imu.setupGyro(imu.LSM9DS1_GYROSCALE_245DPS);
 
   	  	sensors_event_t accel, mag, gyro, temp;
-  	  	delay(1000);
+
+  	  	delay(1000);// wait 1 second for IMU to stabilize
 
         long long total_offset_time = 0, total_filter_time = 0;
 		int count = 0;
@@ -243,12 +254,12 @@ void setup() {
 		auto start = std::chrono::high_resolution_clock::now();
   	  	for (int i = -255; i < 255; ++i) {
   	    	// Serial.println(pwm_num);
-  	    	int pwm_num = (rand() % 511) - 255; // Generating random integer [-255,255]
+  	    	int pwm_num = (rand() % 511) - 255; // Generating random integer [-255,255] for simulated PWM
 
 			// set timestamp 1
 	  		auto t1 = std::chrono::high_resolution_clock::now();
   	    	
-			if (pwm_num < 0) {
+			if (pwm_num < 0) {// flip polarity for negative PWM
   	    	  	digitalWrite(AIN1, LOW);
   	    	  	digitalWrite(AIN2, HIGH);
   	    	  	analogWrite(PWMA, -pwm_num);
@@ -265,6 +276,18 @@ void setup() {
   	   		int resolution = 1023;
   	   		int r1 = 4700;
   	   		int r2 = 10000;
+			float fvolt = analogRead((float)voltage_value_pin) * voltage_ref / (float)resolution * ((float)r1 + (float)r2) / (float)r2;
+			
+			MeasurementData imu_data;
+			imu_data.pwm = pwm_num;
+			imu_data.mag_x = mag.magnetic.x;
+			imu_data.mag_y = mag.magnetic.y;
+			imu_data.mag_z = mag.magnetic.z;
+			imu_data.gyro_x = gyro.gyro.x;
+			imu_data.gyro_y = gyro.gyro.y;
+			imu_data.gyro_z = gyro.gyro.z;
+			imu_data.voltage = fvolt;
+			writeMeasurementData(imu_data, FILENAME_IMU_INPUT_RAW);
 			
 			MeasurementData iron_offset;
 			iron_offset.pwm = pwm_num;
@@ -274,8 +297,8 @@ void setup() {
 			iron_offset.gyro_x = gyro.gyro.x - constants::imu::gyro_hardiron_x;
 			iron_offset.gyro_y = gyro.gyro.y - constants::imu::gyro_hardiron_y;
 			iron_offset.gyro_z = gyro.gyro.z - constants::imu::gyro_hardiron_z;
-			iron_offset.voltage = analogRead(voltage_value_pin) * voltage_ref / resolution * (r1 + r2) / r2;
-
+			iron_offset.voltage = fvolt;
+			writeMeasurementData(iron_offset, FILENAME_IMU_INPUT_OFFSET);
             // set timestamp 2, add time to sum
 			auto t2 = std::chrono::system_clock::now();
 			auto diff_t21 = t2 - t1;
@@ -283,7 +306,7 @@ void setup() {
 			// Serial.println("Reducing generated values with hardiron offsets...");
 			
 			// // Log data to file #1
-			// double offset_values[8] = {
+			// float offset_values[8] = {
             //     iron_offset.pwm,
             //     iron_offset.mag_x,
             //     iron_offset.mag_y,
@@ -305,7 +328,7 @@ void setup() {
 
 			// Serial.println("\nLogging filtered values...");
 			// Log data to file #2
-			double responsive_filtered_values[8] = {
+			float responsive_filtered_values[8] = {
                 iron_offset.pwm,
                 responsive_filtered_output(0),
                 responsive_filtered_output(1),
@@ -318,7 +341,7 @@ void setup() {
             DataLog(responsive_filtered_values, 8, FILENAME_RESPONSIVE_EKF);
 			Serial.println("\n----------------------------------------");
 
-			double calibrated_filtered_values[8] = {
+			float calibrated_filtered_values[8] = {
                 iron_offset.pwm,
                 calibrated_filtered_output(0),
                 calibrated_filtered_output(1),
@@ -346,9 +369,9 @@ void setup() {
   	  	}
 		const auto stop = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
-		double actual_time = static_cast<double>(duration.count() - (100.0*count));
-        double per_offset_processed = ((double)total_offset_time / actual_time) * 100.0;
-		double per_ekf_processed = ((double)total_filter_time / actual_time) * 100.0;
+		float actual_time = static_cast<float>(duration.count() - (100.0*count));
+        float per_offset_processed = ((float)total_offset_time / actual_time) * 100.0;
+		float per_ekf_processed = ((float)total_filter_time / actual_time) * 100.0;
 		// Serial.println("\nTest completed.");
 		// Serial.print(count);
         // Serial.print(" calculation took ");

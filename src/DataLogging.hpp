@@ -7,4 +7,4 @@
 void DataLogSetup(String s);
 
 //Opens the Data.txt file, writes data, close the file when exits
-void DataLog( double Data[], int size, String s);
+void DataLog( float Data[], int size, String s);

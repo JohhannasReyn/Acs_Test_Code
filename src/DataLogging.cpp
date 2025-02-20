@@ -24,7 +24,7 @@ void DataLogSetup(String s){
     DataFile.close();
 }
 
-void DataLog(double Data[], int size, String s)
+void DataLog(float Data[], int size, String s)
 {
     DataFile = SD.open(s.append(".txt").c_str(), FILE_WRITE);
     if (DataFile) {

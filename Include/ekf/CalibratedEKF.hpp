@@ -108,7 +108,7 @@ private:
 			}
 			
 			// Add new error
-			double bounded_error = std::max(-100.0, std::min(100.0, error(i)));
+			float bounded_error = std::max(-100.0f, std::min(100.0f, static_cast<float>(error(i))));
 			innovation_history[i].push_back(bounded_error);
 	
 			// Calculate weighted average with bounds checking
@@ -129,8 +129,8 @@ private:
 			offset_history[i].push_back(weighted_error);
 	
 			// Update cumulative offset with bounds
-			double offset_update = LEARNING_RATE * weighted_error;
-			offset_update = std::max(-1.0, std::min(1.0, offset_update));
+			float offset_update = LEARNING_RATE * weighted_error;
+			offset_update = std::max(-1.0f, std::min(1.0f, offset_update));
 			cumulative_offset[i] += offset_update;
 		}
 	}
