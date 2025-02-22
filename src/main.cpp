@@ -22,10 +22,10 @@
 #define PWMA 29
 #define LED 13
 
-static const String FILENAME_IMU_INPUT_RAW = "raw_imu_readings";
-static const String FILENAME_IMU_INPUT_OFFSET = "imu_readings_offset";
-static const String FILENAME_CALIBRATED_EKF = "calibrated_ekf_values"; // RSO = Random + Softiron Offset
-static const String FILENAME_RESPONSIVE_EKF = "responsive_ekf_values";
+static const String FILENAME_IMU_INPUT_RAW 		= "raw_imu_readings";
+static const String FILENAME_IMU_INPUT_OFFSET 	= "imu_readings_offset";
+static const String FILENAME_CALIBRATED_EKF 	= "calibrated_ekf_values";
+static const String FILENAME_RESPONSIVE_EKF 	= "responsive_ekf_values";
 
 // For CubeSat
 // For x-magnetorquer
